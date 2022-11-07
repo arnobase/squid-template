@@ -3,30 +3,38 @@ import * as ss58 from "@subsquid/ss58"
 import {BatchContext, BatchProcessorItem, SubstrateBatchProcessor} from "@subsquid/substrate-processor"
 import {Store, TypeormDatabase} from "@subsquid/typeorm-store"
 import {In} from "typeorm"
-import {Account, Transfer} from "./model"
-import {BalancesTransferEvent} from "./types/events"
-
+import {Account, Shell} from "./model"
+import {PwNftSaleOriginOfShellMintedEvent,PwNftSaleOriginOfShellPreorderedEvent} from "./types/events"
+import {RarityType, RaceType, CareerType} from "./types/v1170"
 
 const processor = new SubstrateBatchProcessor()
-    .setBatchSize(500)
-    .setDataSource({
-        // Lookup archive by the network name in the Subsquid registry
-        archive: lookupArchive("kusama", {release: "FireSquid"})
-
-        // Use archive created by archive/docker-compose.yml
-        // archive: 'http://localhost:8888/graphql'
-    })
-    .addEvent('Balances.Transfer', {
-        data: {
-            event: {
-                args: true,
-                extrinsic: {
-                    hash: true,
-                    fee: true
-                }
+.setBatchSize(500)
+.setDataSource({
+    // Lookup archive by the network name in the Subsquid registry
+    archive: lookupArchive("khala", {release: "FireSquid"})
+})
+.addEvent('PWNftSale.OriginOfShellMinted', {
+    data: {
+        event: {
+            args: true,
+            extrinsic: {
+                hash: true,
+                fee: true
             }
         }
-    } as const)
+    }
+} as const)
+.addEvent('PWNftSale.OriginOfShellPreordered', {
+    data: {
+        event: {
+            args: true,
+            extrinsic: {
+                hash: true,
+                fee: true
+            }
+        }
+    }
+} as const);
 
 
 type Item = BatchProcessorItem<typeof processor>
@@ -34,35 +42,36 @@ type Ctx = BatchContext<Store, Item>
 
 
 processor.run(new TypeormDatabase(), async ctx => {
-    let transfersData = getTransfers(ctx)
+    let nftData = getNFTEvents(ctx)
 
     let accountIds = new Set<string>()
-    for (let t of transfersData) {
-        accountIds.add(t.from)
-        accountIds.add(t.to)
+    for (let t of nftData) {
+        accountIds.add(t.accountId)
     }
 
     let accounts = await ctx.store.findBy(Account, {id: In([...accountIds])}).then(accounts => {
         return new Map(accounts.map(a => [a.id, a]))
     })
 
-    let transfers: Transfer[] = []
+    let transfers: Shell[] = []
 
-    for (let t of transfersData) {
-        let {id, blockNumber, timestamp, extrinsicHash, amount, fee} = t
+    for (let t of nftData) {
+        
+        let {id, timestamp, method, rarity,
+            nftId, race, career, generationId} = t
 
-        let from = getAccount(accounts, t.from)
-        let to = getAccount(accounts, t.to)
+        let account = getAccount(accounts, t.accountId)
 
-        transfers.push(new Transfer({
+        transfers.push(new Shell({
             id,
-            blockNumber,
+            account,
+            rarity,
+            race,
+            career,
             timestamp,
-            extrinsicHash,
-            from,
-            to,
-            amount,
-            fee
+            method,
+            nftId,
+            generationId
         }))
     }
 
@@ -71,48 +80,77 @@ processor.run(new TypeormDatabase(), async ctx => {
 })
 
 
-interface TransferEvent {
+interface NFTEvent {
     id: string
     blockNumber: number
     timestamp: Date
     extrinsicHash?: string
-    from: string
-    to: string
-    amount: bigint
-    fee?: bigint
+    accountId: string
+    method: string
+    rarity: string
+    nftId: number
+    race: string
+    career: string
+    generationId: number
 }
 
-
-function getTransfers(ctx: Ctx): TransferEvent[] {
-    let transfers: TransferEvent[] = []
+function getNFTEvents(ctx: Ctx): NFTEvent[] {
+    let nfts: NFTEvent[] = []
     for (let block of ctx.blocks) {
         for (let item of block.items) {
-            if (item.name == "Balances.Transfer") {
-                let e = new BalancesTransferEvent(ctx, item.event)
-                let rec: {from: Uint8Array, to: Uint8Array, amount: bigint}
-                if (e.isV1020) {
-                    let [from, to, amount,] = e.asV1020
-                    rec = {from, to, amount}
-                } else if (e.isV1050) {
-                    let [from, to, amount] = e.asV1050
-                    rec = {from, to, amount}
-                } else {
-                    rec = e.asV9130
-                }
-                transfers.push({
+            if (item.name == "PWNftSale.OriginOfShellMinted") {
+                let e = new PwNftSaleOriginOfShellMintedEvent(ctx, item.event)
+                let rec: {
+                    rarityType: RarityType,
+                    collectionId: number, 
+                    nftId: number,
+                    owner: Uint8Array,
+                    race: RaceType,
+                    career: CareerType,
+                    generationId: number
+                };
+                rec=e.asV1170;
+                nfts.push({
                     id: item.event.id,
                     blockNumber: block.header.height,
                     timestamp: new Date(block.header.timestamp),
                     extrinsicHash: item.event.extrinsic?.hash,
-                    from: ss58.codec('kusama').encode(rec.from),
-                    to: ss58.codec('kusama').encode(rec.to),
-                    amount: rec.amount,
-                    fee: item.event.extrinsic?.fee || 0n
-                })
+                    accountId: ss58.codec('kusama').encode(rec.owner),
+                    method: "mint",
+                    rarity: rec.rarityType.__kind,
+                    nftId: rec.nftId,
+                    race: rec.race.__kind,
+                    career: rec.career.__kind,
+                    generationId: rec.generationId
+                });
+            }
+            if (item.name == "PWNftSale.OriginOfShellPreordered") {
+                let e = new PwNftSaleOriginOfShellPreorderedEvent(ctx, item.event)
+                let rec: {
+                    preorderId: number,
+                    owner: Uint8Array,
+                    race: RaceType,
+                    career: CareerType,
+                    
+                };
+                rec=e.asV1181;
+                nfts.push({
+                    id: item.event.id,
+                    blockNumber: block.header.height,
+                    timestamp: new Date(block.header.timestamp),
+                    extrinsicHash: item.event.extrinsic?.hash,
+                    accountId: ss58.codec('kusama').encode(rec.owner),
+                    method: "preorder",
+                    rarity: "prime",
+                    nftId: rec.preorderId,
+                    race: rec.race.__kind,
+                    career: rec.career.__kind,
+                    generationId: 0
+                });
             }
         }
     }
-    return transfers
+    return nfts
 }
 
 

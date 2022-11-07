@@ -1,11 +1,12 @@
 {
   "outDir": "src/types",
-  "specVersions": "https://kusama.archive.subsquid.io/graphql",
+  "specVersions": "https://khala.archive.subsquid.io/graphql",
   "events": [
-    "Balances.Transfer"
+    "PWNftSale.OriginOfShellPreordered",
+    "PWNftSale.OriginOfShellMinted"
   ],
   "calls": [ 
   ],
   "storage": [
-  ]
+  ] 
 }
