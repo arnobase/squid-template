@@ -14,3 +14,12 @@ type Shell @entity {
   nftId: Int
   generationId: Int
 }
+
+type ReceivedFood @entity {
+  id :ID!
+  timestamp: DateTime
+  sender: String
+  nftId: Int
+  collection: Int
+  era: Int
+}

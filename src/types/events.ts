@@ -4,6 +4,50 @@ import * as v1150 from './v1150'
 import * as v1170 from './v1170'
 import * as v1181 from './v1181'
 
+export class PwIncubationOriginOfShellReceivedFoodEvent {
+  private readonly _chain: Chain
+  private readonly event: Event
+
+  constructor(ctx: EventContext)
+  constructor(ctx: ChainContext, event: Event)
+  constructor(ctx: EventContext, event?: Event) {
+    event = event || ctx.event
+    assert(event.name === 'PWIncubation.OriginOfShellReceivedFood')
+    this._chain = ctx._chain
+    this.event = event
+  }
+
+  /**
+   * Origin of Shell received food from an account
+   */
+  get isV1150(): boolean {
+    return this._chain.getEventHash('PWIncubation.OriginOfShellReceivedFood') === '8065dd55844c0b40f3f7c6a492b55434af3504eb9713e7716621b0c00f94ffd0'
+  }
+
+  /**
+   * Origin of Shell received food from an account
+   */
+  get asV1150(): {collectionId: number, nftId: number, sender: Uint8Array} {
+    assert(this.isV1150)
+    return this._chain.decodeEvent(this.event)
+  }
+
+  /**
+   * Origin of Shell received food from an account.
+   */
+  get isV1181(): boolean {
+    return this._chain.getEventHash('PWIncubation.OriginOfShellReceivedFood') === '062a75caf5bf48dc37b537e6bd568cfd36dc4d03dc4636dd3a86c6cc46e08b2e'
+  }
+
+  /**
+   * Origin of Shell received food from an account.
+   */
+  get asV1181(): {collectionId: number, nftId: number, sender: Uint8Array, era: bigint} {
+    assert(this.isV1181)
+    return this._chain.decodeEvent(this.event)
+  }
+}
+
 export class PwNftSaleOriginOfShellMintedEvent {
   private readonly _chain: Chain
   private readonly event: Event

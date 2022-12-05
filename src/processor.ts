@@ -3,9 +3,12 @@ import * as ss58 from "@subsquid/ss58"
 import {BatchContext, BatchProcessorItem, SubstrateBatchProcessor} from "@subsquid/substrate-processor"
 import {Store, TypeormDatabase} from "@subsquid/typeorm-store"
 import {In} from "typeorm"
-import {Account, Shell} from "./model"
-import {PwNftSaleOriginOfShellMintedEvent,PwNftSaleOriginOfShellPreorderedEvent} from "./types/events"
+import {Account, Shell, ReceivedFood} from "./model"
+import {PwNftSaleOriginOfShellMintedEvent,PwNftSaleOriginOfShellPreorderedEvent, PwIncubationOriginOfShellReceivedFoodEvent} from "./types/events"
 import {RarityType, RaceType, CareerType} from "./types/v1170"
+
+import { Keyring } from '@polkadot/keyring';
+const keyring = new Keyring();
 
 const processor = new SubstrateBatchProcessor()
 .setBatchSize(500)
@@ -34,7 +37,19 @@ const processor = new SubstrateBatchProcessor()
             }
         }
     }
+} as const)
+.addEvent('PWIncubation.OriginOfShellReceivedFood', {
+    data: {
+        event: {
+            args: true,
+            extrinsic: {
+                hash: true,
+                fee: true
+            }
+        }
+    }
 } as const);
+
 
 
 type Item = BatchProcessorItem<typeof processor>
@@ -43,6 +58,7 @@ type Ctx = BatchContext<Store, Item>
 
 processor.run(new TypeormDatabase(), async ctx => {
     let nftData = getNFTEvents(ctx)
+    let foodData = getFoodEvents(ctx)
 
     let accountIds = new Set<string>()
     for (let t of nftData) {
@@ -54,7 +70,6 @@ processor.run(new TypeormDatabase(), async ctx => {
     })
 
     let transfers: Shell[] = []
-
     for (let t of nftData) {
         
         let {id, timestamp, method, rarity,
@@ -75,10 +90,25 @@ processor.run(new TypeormDatabase(), async ctx => {
         }))
     }
 
+    let foodTransfers: FoodEvent[] = []
+    for (let t of foodData) {
+        
+        let {id,timestamp,sender,nftId,collection,era} = t
+
+        foodTransfers.push(new ReceivedFood({
+            id,
+            timestamp,
+            sender,
+            nftId,
+            collection,
+            era
+        }))
+    }
+
     await ctx.store.save(Array.from(accounts.values()))
     await ctx.store.insert(transfers)
+    await ctx.store.insert(foodTransfers)
 })
-
 
 interface NFTEvent {
     id: string
@@ -115,7 +145,7 @@ function getNFTEvents(ctx: Ctx): NFTEvent[] {
                     blockNumber: block.header.height,
                     timestamp: new Date(block.header.timestamp),
                     extrinsicHash: item.event.extrinsic?.hash,
-                    accountId: ss58.codec('kusama').encode(rec.owner),
+                    accountId: keyring.encodeAddress(keyring.decodeAddress(rec.owner),30),
                     method: "mint",
                     rarity: rec.rarityType.__kind,
                     nftId: rec.nftId,
@@ -139,7 +169,7 @@ function getNFTEvents(ctx: Ctx): NFTEvent[] {
                     blockNumber: block.header.height,
                     timestamp: new Date(block.header.timestamp),
                     extrinsicHash: item.event.extrinsic?.hash,
-                    accountId: ss58.codec('kusama').encode(rec.owner),
+                    accountId: keyring.encodeAddress(keyring.decodeAddress(rec.owner),30),
                     method: "preorder",
                     rarity: "prime",
                     nftId: rec.preorderId,
@@ -153,6 +183,43 @@ function getNFTEvents(ctx: Ctx): NFTEvent[] {
     return nfts
 }
 
+interface FoodEvent {
+    id: string
+    timestamp: Date | null | undefined
+    sender: string | null | undefined
+    nftId: number | null | undefined
+    collection: number | null | undefined
+    era: number | null | undefined
+}
+
+function getFoodEvents(ctx: Ctx): FoodEvent[] {
+    let foods: FoodEvent[] = []
+    for (let block of ctx.blocks) {
+        for (let item of block.items) {
+            
+            if (item.name == "PWIncubation.OriginOfShellReceivedFood") {
+                let e = new PwIncubationOriginOfShellReceivedFoodEvent(ctx, item.event)
+                let rec: {
+                    nftId: number,
+                    sender: Uint8Array,
+                    collectionId: number,
+                    era: bigint,
+                    
+                };
+                rec=e.asV1181;
+                foods.push({
+                    id: item.event.id,
+                    timestamp: new Date(block.header.timestamp),
+                    sender: keyring.encodeAddress(keyring.decodeAddress(rec.sender),30),
+                    nftId: rec.nftId,
+                    collection: rec.collectionId,
+                    era: Number(rec.era)
+                });
+            }
+        }
+    }
+    return foods
+}
 
 function getAccount(m: Map<string, Account>, id: string): Account {
     let acc = m.get(id)

@@ -3,7 +3,8 @@
   "specVersions": "https://khala.archive.subsquid.io/graphql",
   "events": [
     "PWNftSale.OriginOfShellPreordered",
-    "PWNftSale.OriginOfShellMinted"
+    "PWNftSale.OriginOfShellMinted",
+    "PWIncubation.OriginOfShellReceivedFood"
   ],
   "calls": [ 
   ],
